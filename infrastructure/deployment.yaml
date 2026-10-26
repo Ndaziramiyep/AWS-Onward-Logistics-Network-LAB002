@@ -1,0 +1,22 @@
+# CloudFormation Git sync deployment file.
+# Git sync reads this file to know which template to deploy, with which parameters and tags.
+# The template path is relative to the root of the repository.
+template-file-path: infrastructure/template.yaml
+
+parameters:
+  ProjectName: onward-logistics
+  Environment: lab
+  StudentName: Patrick Ndaziramiye
+  LabName: Highly Available, Secure Network on AWS
+  InstanceType: t3.micro
+  FrontEndMinSize: "2"
+  FrontEndMaxSize: "4"
+
+# Stack tags are applied to every resource that supports tags.
+# Adjust keys and values to match the tagging standard in the Client Profile.
+tags:
+  Project: onward-logistics
+  Environment: lab
+  Owner: patrick-ndaziramiye
+  CostCenter: onward-logistics-orders
+  ManagedBy: cloudformation-gitsync
