@@ -1,0 +1,83 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  ONE-TIME PREREQUISITE (deploy before Git sync). Creates the IAM role that CloudFormation
+  Git sync assumes to deploy infrastructure/template.yaml. Uses a customer managed policy,
+  not an inline policy. Review the permissions and narrow them for a real production account.
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: onward-logistics-gitsync-role
+
+Resources:
+  GitSyncPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${RoleName}-policy"
+      Description: Permissions Git sync needs to deploy the Onward Logistics network stack.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: StackOperations
+            Effect: Allow
+            Action: ["cloudformation:*"]
+            Resource: "*"
+          - Sid: ResourcesInTemplate
+            Effect: Allow
+            Action:
+              - "ec2:*"
+              - "elasticloadbalancing:*"
+              - "autoscaling:*"
+            Resource: "*"
+          - Sid: ResolveLatestAmi
+            Effect: Allow
+            Action: ["ssm:GetParameters", "ssm:GetParameter"]
+            Resource: !Sub "arn:${AWS::Partition}:ssm:*:*:parameter/aws/service/*"
+          - Sid: InstanceRoleAndProfile
+            Effect: Allow
+            Action:
+              - "iam:CreateRole"
+              - "iam:DeleteRole"
+              - "iam:GetRole"
+              - "iam:TagRole"
+              - "iam:UntagRole"
+              - "iam:AttachRolePolicy"
+              - "iam:DetachRolePolicy"
+              - "iam:CreateInstanceProfile"
+              - "iam:DeleteInstanceProfile"
+              - "iam:GetInstanceProfile"
+              - "iam:AddRoleToInstanceProfile"
+              - "iam:RemoveRoleFromInstanceProfile"
+              - "iam:PassRole"
+              - "iam:CreateServiceLinkedRole"
+            Resource: "*"
+          - Sid: GitSyncEventing
+            Effect: Allow
+            Action:
+              - "events:PutRule"
+              - "events:PutTargets"
+              - "events:DescribeRule"
+              - "events:DeleteRule"
+              - "events:RemoveTargets"
+              - "sns:Publish"
+            Resource: "*"
+
+  GitSyncRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Assumed by CloudFormation Git sync to deploy from the GitHub repository.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.sync.codeconnections.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref GitSyncPolicy
+
+Outputs:
+  GitSyncRoleArn:
+    Description: Paste this ARN into the Git sync setup in the CloudFormation console.
+    Value: !GetAtt GitSyncRole.Arn
