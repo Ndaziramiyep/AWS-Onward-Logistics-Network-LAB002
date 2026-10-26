@@ -301,3 +301,131 @@ Resources:
     Properties:
       InstanceProfileName: !Sub "${ProjectName}-${Environment}-ec2-ssm-profile"
       Roles: [!Ref InstanceRole]
+
+  # ===== 4. FRONT END: Load balancer + Auto Scaling group =====
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${ProjectName}-${Environment}-alb"
+      Type: application
+      Scheme: internet-facing
+      Subnets: [!Ref PublicSubnet1, !Ref PublicSubnet2]
+      SecurityGroups: [!Ref AlbSecurityGroup]
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-alb" }
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${ProjectName}-${Environment}-tg"
+      VpcId: !Ref Vpc
+      Protocol: HTTP
+      Port: 80
+      TargetType: instance
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: "30" }
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-tg" }
+
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  FrontEndLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${ProjectName}-${Environment}-frontend-lt"
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        MetadataOptions:
+          HttpTokens: required
+          HttpEndpoint: enabled
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: true
+            Groups: [!Ref FrontEndSecurityGroup]
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-frontend" }
+          - ResourceType: volume
+            Tags:
+              - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-frontend-vol" }
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -e
+            dnf install -y httpd
+            TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
+            AZ=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/availability-zone)
+            IID=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id)
+            cat > /var/www/html/index.html <<EOF
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <title>Onward Logistics Order System</title>
+              <style>
+                body { font-family: Arial, sans-serif; max-width: 640px; margin: 60px auto; color: #222; }
+                h1 { font-size: 26px; }
+                p { font-size: 18px; }
+                small { color: #666; }
+              </style>
+            </head>
+            <body>
+              <h1>Onward Logistics Order System</h1>
+              <p><b>Name:</b> ${StudentName}</p>
+              <p><b>Lab:</b> ${LabName}</p>
+              <p><small>Served from $IID in $AZ</small></p>
+            </body>
+            </html>
+            EOF
+            systemctl enable --now httpd
+
+  FrontEndAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "${ProjectName}-${Environment}-frontend-asg"
+      MinSize: !Ref FrontEndMinSize
+      MaxSize: !Ref FrontEndMaxSize
+      DesiredCapacity: !Ref FrontEndMinSize
+      VPCZoneIdentifier: [!Ref PublicSubnet1, !Ref PublicSubnet2]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref FrontEndLaunchTemplate
+        Version: !GetAtt FrontEndLaunchTemplate.LatestVersionNumber
+      TargetGroupARNs: [!Ref TargetGroup]
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 180
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-frontend", PropagateAtLaunch: true }
+    UpdatePolicy:
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 1
+        PauseTime: PT2M
+        WaitOnResourceSignals: false
+
+  # Scale out automatically on busy sales days
+  FrontEndScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref FrontEndAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 60
