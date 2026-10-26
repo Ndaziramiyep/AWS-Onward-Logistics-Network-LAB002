@@ -474,3 +474,28 @@ Resources:
         Version: !GetAtt InternalLaunchTemplate.LatestVersionNumber
       Tags:
         - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-internal-2" }
+
+# ---------------------------------------------------------------------------
+# OUTPUTS
+# ---------------------------------------------------------------------------
+Outputs:
+  FrontEndUrl:
+    Description: Open this in a browser to reach the front end.
+    Value: !Sub "http://${LoadBalancer.DNSName}"
+  VpcId:
+    Value: !Ref Vpc
+  PublicSubnetIds:
+    Value: !Join [",", [!Ref PublicSubnet1, !Ref PublicSubnet2]]
+  PrivateSubnetIds:
+    Value: !Join [",", [!Ref PrivateSubnet1, !Ref PrivateSubnet2]]
+  InternalSecurityGroupId:
+    Value: !Ref InternalSecurityGroup
+  InternalServer1Id:
+    Value: !Ref InternalServer1
+  InternalServer2Id:
+    Value: !Ref InternalServer2
+  AdminCommandInternal1:
+    Description: Remote admin without SSH or keys.
+    Value: !Sub "aws ssm start-session --target ${InternalServer1}"
+  AdminCommandInternal2:
+    Value: !Sub "aws ssm start-session --target ${InternalServer2}"
