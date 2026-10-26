@@ -245,3 +245,59 @@ Resources:
     Properties:
       SubnetId: !Ref PrivateSubnet2
       RouteTableId: !Ref PrivateRouteTable2
+
+  # ===== 2. SECURITY GROUPS (no port 22 anywhere) =====
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${ProjectName}-${Environment}-alb-sg"
+      GroupDescription: Load balancer. HTTP from the internet.
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: HTTP from the internet }
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-alb-sg" }
+
+  FrontEndSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${ProjectName}-${Environment}-frontend-sg"
+      GroupDescription: Front-end servers. HTTP only from the load balancer.
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, SourceSecurityGroupId: !Ref AlbSecurityGroup, Description: HTTP from the load balancer only }
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-frontend-sg" }
+
+  InternalSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub "${ProjectName}-${Environment}-internal-sg"
+      GroupDescription: Internal order services. No internet inbound. Only the front end may call port 8080.
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 8080, ToPort: 8080, SourceSecurityGroupId: !Ref FrontEndSecurityGroup, Description: Order service calls from the front end }
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-internal-sg" }
+
+  # ===== 3. IAM: role for Session Manager (managed policy only, no inline policies) =====
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-${Environment}-ec2-ssm-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-ec2-ssm-role" }
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${ProjectName}-${Environment}-ec2-ssm-profile"
+      Roles: [!Ref InstanceRole]
