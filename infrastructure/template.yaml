@@ -429,3 +429,48 @@ Resources:
         PredefinedMetricSpecification:
           PredefinedMetricType: ASGAverageCPUUtilization
         TargetValue: 60
+
+  # ===== 5. INTERNAL SERVERS: private subnets, one per AZ =====
+  InternalLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${ProjectName}-${Environment}-internal-lt"
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt InstanceProfile.Arn
+        MetadataOptions:
+          HttpTokens: required
+          HttpEndpoint: enabled
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            # Proves the private server can download a package through the NAT Gateway.
+            dnf install -y htop >> /var/log/internal-bootstrap.log 2>&1 \
+              && echo "package download OK" >> /var/log/internal-bootstrap.log \
+              || echo "package download FAILED" >> /var/log/internal-bootstrap.log
+
+  InternalServer1:
+    Type: AWS::EC2::Instance
+    DependsOn: PrivateDefaultRoute1
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      SecurityGroupIds: [!Ref InternalSecurityGroup]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref InternalLaunchTemplate
+        Version: !GetAtt InternalLaunchTemplate.LatestVersionNumber
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-internal-1" }
+
+  InternalServer2:
+    Type: AWS::EC2::Instance
+    DependsOn: PrivateDefaultRoute2
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      SecurityGroupIds: [!Ref InternalSecurityGroup]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref InternalLaunchTemplate
+        Version: !GetAtt InternalLaunchTemplate.LatestVersionNumber
+      Tags:
+        - { Key: Name, Value: !Sub "${ProjectName}-${Environment}-internal-2" }
