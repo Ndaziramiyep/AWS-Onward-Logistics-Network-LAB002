@@ -1,0 +1,75 @@
+cat > cfn-execution-role.yaml << 'EOF'
+AWSTemplateFormatVersion: "2010-09-09"
+Description: IAM role CloudFormation uses to perform all operations on the stack (managed policy only).
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: onward-logistics-cfn-execution-role
+
+Resources:
+  ExecutionPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${RoleName}-policy"
+      Description: Permissions CloudFormation needs to build the Onward Logistics network stack.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: NetworkAndCompute
+            Effect: Allow
+            Action:
+              - "ec2:*"
+              - "elasticloadbalancing:*"
+              - "autoscaling:*"
+            Resource: "*"
+          - Sid: ResolveLatestAmi
+            Effect: Allow
+            Action: ["ssm:GetParameters", "ssm:GetParameter"]
+            Resource: !Sub "arn:${AWS::Partition}:ssm:*:*:parameter/aws/service/*"
+          - Sid: InstanceRoleAndProfile
+            Effect: Allow
+            Action:
+              - "iam:CreateRole"
+              - "iam:DeleteRole"
+              - "iam:GetRole"
+              - "iam:TagRole"
+              - "iam:UntagRole"
+              - "iam:AttachRolePolicy"
+              - "iam:DetachRolePolicy"
+              - "iam:CreateInstanceProfile"
+              - "iam:DeleteInstanceProfile"
+              - "iam:GetInstanceProfile"
+              - "iam:AddRoleToInstanceProfile"
+              - "iam:RemoveRoleFromInstanceProfile"
+              - "iam:PassRole"
+              - "iam:CreateServiceLinkedRole"
+            Resource: "*"
+
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Assumed by CloudFormation to perform all operations on the Onward Logistics stack.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudformation.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Ref ExecutionPolicy
+
+Outputs:
+  ExecutionRoleArn:
+    Value: !GetAtt ExecutionRole.Arn
+EOF
+
+aws cloudformation deploy \
+  --stack-name onward-logistics-cfn-execution-prereq \
+  --template-file cfn-execution-role.yaml \
+  --capabilities CAPABILITY_NAMED_IAM
+
+aws iam get-role --role-name onward-logistics-cfn-execution-role \
+  --query "Role.[RoleName,Arn]" --output text
